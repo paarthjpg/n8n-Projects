@@ -1,0 +1,1892 @@
+{
+  "name": "AI Customer Support + Ticket Routing System",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "value": 1,
+              "unit": "minutes"
+            }
+          ]
+        },
+        "filters": {
+          "labelIds": [
+            "INBOX"
+          ],
+          "readStatus": "unread"
+        }
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "ede7280a-56ed-47d0-9a1d-c0d63dce04f6",
+      "name": "Gmail Trigger",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "AmoHY1ToRGbbhSYT",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Get raw Gemini text\nconst rawText = $input.item.json.content.parts[0].text;\n\n// Clean any markdown\nconst cleanedText = rawText\n  .replace(/```json/g, '')\n  .replace(/```/g, '')\n  .trim();\n\n// Parse\nlet analysis;\ntry {\n  analysis = JSON.parse(cleanedText);\n} catch(e) {\n  analysis = {\n    category:      'General Inquiry',\n    urgency:       'Low',\n    sentiment:     'Neutral',\n    ai_summary:    'Could not parse — manual review needed',\n    draft_reply:   'Thank you for contacting us. Our team will review your message and get back to you within 24 hours.',\n    internal_note: 'AI parse error — please review this ticket manually'\n  };\n}\n\n// Pull original email data from Node 2\nconst emailData = $('Extract and Clean Email Content').item.json;\n\nreturn {\n  json: {\n    ticket_id:      emailData.ticket_id,\n    message_id:     emailData.message_id,\n    thread_id:      emailData.thread_id,\n    subject:        emailData.subject,\n    sender_email:   emailData.sender_email,\n    sender_name:    emailData.sender_name,\n    received_at:    emailData.received_at,\n    clean_body:     emailData.clean_body,\n    category:       analysis.category,\n    urgency:        analysis.urgency,\n    sentiment:      analysis.sentiment,\n    ai_summary:     analysis.ai_summary,\n    draft_reply:    analysis.draft_reply,\n    internal_note:  analysis.internal_note\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        704,
+        0
+      ],
+      "id": "a950b590-8db7-44b2-b5cf-bb404cc4edd2",
+      "name": "Parse Gemini Response"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const email = $input.item.json;\n\n// Extract core email fields\nconst messageId   = email.id || '';\nconst threadId    = email.threadId || '';\nconst subject     = email.subject || '(No Subject)';\nconst senderFull  = email.from || '';\nconst receivedAt  = email.date || new Date().toISOString();\n\n// Extract sender email and name\nconst emailMatch = senderFull.match(/<(.+?)>/);\nconst nameMatch  = senderFull.match(/^([^<]+)/);\nconst senderEmail = emailMatch ? emailMatch[1].trim() : senderFull.trim();\nconst senderName  = nameMatch ? nameMatch[1].trim().replace(/\"/g, '') : senderEmail;\n\n// Get email body — n8n Gmail node provides text and/or html\nlet rawBody = email.text || email.body || email.snippet || '';\n\n// If body is HTML, strip tags\nif (rawBody.includes('<')) {\n  rawBody = rawBody\n    .replace(/<style[^>]*>[\\s\\S]*?<\\/style>/gi, '')\n    .replace(/<script[^>]*>[\\s\\S]*?<\\/script>/gi, '')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/&nbsp;/g, ' ')\n    .replace(/&amp;/g, '&')\n    .replace(/&lt;/g, '<')\n    .replace(/&gt;/g, '>')\n    .replace(/\\s+/g, ' ')\n    .trim();\n}\n\n// Remove quoted reply chains (lines starting with > or On [date] wrote:)\nconst cleanBody = rawBody\n  .split('\\n')\n  .filter(line => !line.trim().startsWith('>'))\n  .filter(line => !line.match(/^On .+ wrote:$/))\n  .join('\\n')\n  .trim()\n  .substring(0, 2000); // Cap at 2000 chars — enough for Gemini\n\n// Generate ticket ID\nconst ticketId = 'TKT-' + Date.now().toString().slice(-6);\n\nreturn {\n  json: {\n    ticket_id:    ticketId,\n    message_id:   messageId,\n    thread_id:    threadId,\n    subject:      subject,\n    sender_email: senderEmail,\n    sender_name:  senderName,\n    received_at:  receivedAt,\n    clean_body:   cleanBody,\n    raw_snippet:  email.snippet || ''\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        176,
+        0
+      ],
+      "id": "763e967d-7be8-45a8-b2b1-fe37af0fed19",
+      "name": "Extract and Clean Email Content"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-robotics-er-1.5-preview",
+          "mode": "list",
+          "cachedResultName": "models/gemini-robotics-er-1.5-preview"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "={\n  \"contents\": [\n    {\n      \"parts\": [\n        {\n          \"text\": \"You are a senior customer support specialist for an Indian e-commerce brand that sells electronics, clothing, fitness equipment, beauty products, and kitchen items.\\n\\nA customer has sent the following support email:\\n\\nFROM: {{ $json.sender_name }} ({{ $json.sender_email }})\\nSUBJECT: {{ $json.subject }}\\nMESSAGE:\\n{{ $json.clean_body }}\\n\\nYour task is to analyze this email and produce a structured support response plan.\\n\\nClassification rules:\\n- category must be exactly one of: Refund, Delivery Delay, Wrong Item, Payment Failed, App Bug, Product Quality, General Inquiry\\n- urgency must be exactly one of: High, Medium, Low\\n  - High: payment issues, missing orders, delivery to wrong address, angry tone\\n  - Medium: refund requests, wrong items, delivery delays\\n  - Low: general questions, feedback, app issues, product queries\\n- sentiment must be exactly one of: Positive, Neutral, Frustrated, Angry\\n\\nDraft reply rules:\\n- Address the customer by first name\\n- Acknowledge their specific issue — do not use generic templates\\n- Be empathetic but professional\\n- Give a concrete next step or resolution timeline\\n- Sign off as: Support Team, [Brand Name]\\n- Keep reply between 80 and 120 words\\n- Do not promise specific refund amounts or dates you cannot confirm\\n\\nRespond ONLY with a valid JSON object in this exact format, no extra text, no markdown, no code blocks:\\n{\\\"category\\\": \\\"one of the categories above\\\", \\\"urgency\\\": \\\"High or Medium or Low\\\", \\\"sentiment\\\": \\\"one of the sentiments above\\\", \\\"ai_summary\\\": \\\"one sentence describing the core issue\\\", \\\"draft_reply\\\": \\\"full email reply text ready to send\\\", \\\"internal_note\\\": \\\"one sentence for the support team about what action is needed\\\"}\"\n        }\n      ]\n    }\n  ],\n  \"generationConfig\": {\n    \"temperature\": 0.3,\n    \"maxOutputTokens\": 800\n  }\n}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        352,
+        0
+      ],
+      "id": "1e8551de-05cb-49f4-b6b7-f84d32492438",
+      "name": "Gemini AI Analysis",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "uwq2WOykU1qjidXz",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1rNbWFr_yVSA15R-pDMYQKq5U_yUXeQFCc5q0Vgff5kA",
+          "mode": "list",
+          "cachedResultName": "Ecommerce_BI_System",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1rNbWFr_yVSA15R-pDMYQKq5U_yUXeQFCc5q0Vgff5kA/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 25111677,
+          "mode": "list",
+          "cachedResultName": "Ticket_Log",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1rNbWFr_yVSA15R-pDMYQKq5U_yUXeQFCc5q0Vgff5kA/edit#gid=25111677"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ticket_id": "={{ $json.ticket_id }}",
+            "received_at": "={{ $json.received_at }}",
+            "customer_email": "={{ $json.sender_email }}",
+            "customer_name": "={{ $json.sender_name }}",
+            "subject": "={{ $json.subject }}",
+            "category": "={{ $json.category }}",
+            "urgency": "={{ $json.urgency }}",
+            "sentiment": "={{ $json.sentiment }}",
+            "ai_summary": "={{ $json.ai_summary }}",
+            "action_taken": "Pending routing",
+            "auto_reply_sent": "No",
+            "escalated": "No"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "ticket_id",
+              "displayName": "ticket_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "received_at",
+              "displayName": "received_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "customer_email",
+              "displayName": "customer_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "customer_name",
+              "displayName": "customer_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "subject",
+              "displayName": "subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "category",
+              "displayName": "category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "urgency",
+              "displayName": "urgency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "sentiment",
+              "displayName": "sentiment",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ai_summary",
+              "displayName": "ai_summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "action_taken",
+              "displayName": "action_taken",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "auto_reply_sent",
+              "displayName": "auto_reply_sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "escalated",
+              "displayName": "escalated",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        912,
+        0
+      ],
+      "id": "fe13a950-f3cc-4c05-a0e3-5e380b9a368b",
+      "name": "Log Ticket to Google Sheets",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "uxTlXU5mWqsvdp7K",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "2b8e8935-e861-417e-849c-0b0e39de21ad",
+              "leftValue": "={{ $json.urgency }}",
+              "rightValue": "High",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1104,
+        0
+      ],
+      "id": "b7cd9aa4-2dc7-40fa-94e1-3c1058759614",
+      "name": "Route by Urgency and Category"
+    },
+    {
+      "parameters": {
+        "sendTo": "paarth.entre@gmail.com",
+        "subject": "=🚨 HIGH URGENCY TICKET — {{ $json.ticket_id }} \n {{ $json.category }} \n {{ $json.sender_name }}",
+        "emailType": "text",
+        "message": "=HIGH URGENCY SUPPORT TICKET — IMMEDIATE ATTENTION REQUIRED ============================================================ Ticket ID:       {{ $json.ticket_id }} Received:        {{ $json.received_at }} Customer:        {{ $json.sender_name }} ({{ $json.sender_email }}) Category:        {{ $json.category }} Urgency:         {{ $json.urgency }} Sentiment:       {{ $json.sentiment }}  ISSUE SUMMARY: {{ $json.ai_summary }}  INTERNAL NOTE FROM AI: {{ $json.internal_note }}  ORIGINAL MESSAGE SUBJECT: {{ $json.subject }}  ORIGINAL MESSAGE: {{ $json.clean_body }}  ============================================================ AI DRAFTED REPLY (review before sending): {{ $json.draft_reply }} ============================================================  This ticket has been logged as {{ $json.ticket_id }} in your support sheet. Please take action within 2 hours.",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1312,
+        -96
+      ],
+      "id": "25d3906c-30a4-4c7a-96e0-f1cc0395ae17",
+      "name": "Send a message",
+      "webhookId": "3d687c6a-d440-42c0-b5c7-44622d288471",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "AmoHY1ToRGbbhSYT",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.category }}",
+                    "rightValue": "Refund",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "9396a4a5-6284-4876-b5d7-3e58f84fa7a0"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "ba62d81d-30ee-40b8-8ee1-ed51c2ab8892",
+                    "leftValue": "={{ $json.category }}",
+                    "rightValue": "Payment Failed",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "363d24c9-d874-4f60-a3ef-0ed5a851758f",
+                    "leftValue": "={{ $json.category }}",
+                    "rightValue": "Delivery Delay",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "fd1a48ee-374b-400a-93aa-994b8ee719e5",
+                    "leftValue": "={{ $json.category }}",
+                    "rightValue": "General Inquiry",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1312,
+        96
+      ],
+      "id": "b5325994-f9db-4ae4-9a55-37db08e1f396",
+      "name": "Switch",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "sendTo": "paarth.demo@gmail.com",
+        "subject": "=[REFUND REQUEST] {{ $json.ticket_id }} — {{ $json.sender_name }}",
+        "emailType": "text",
+        "message": "=REFUND REQUEST — REQUIRES FINANCE TEAM ACTION ============================================== Ticket ID:    {{ $json.ticket_id }} Customer:     {{ $json.sender_name }} Email:        {{ $json.sender_email }} Received:     {{ $json.received_at }} Sentiment:    {{ $json.sentiment }}  ISSUE: {{ $json.ai_summary }}  INTERNAL NOTE: {{ $json.internal_note }}  ORIGINAL MESSAGE: {{ $json.clean_body }}  AI SUGGESTED REPLY: {{ $json.draft_reply }}  Please process this refund request and send the reply above after confirming refund eligibility.",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1728,
+        -48
+      ],
+      "id": "0f8bbc37-c0f9-411a-82cc-54635e24414a",
+      "name": "Finance Team Routing Email",
+      "webhookId": "8ec3616b-bd55-4f93-a228-0af59567a669",
+      "alwaysOutputData": true,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "AmoHY1ToRGbbhSYT",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "paarth.demo@gmail.com",
+        "subject": "=[PAYMENT ISSUE] {{ $json.ticket_id }} — {{ $json.sender_name }}",
+        "emailType": "text",
+        "message": "=PAYMENT FAILURE — REQUIRES IMMEDIATE FINANCE REVIEW ===================================================== Ticket ID:    {{ $json.ticket_id }} Customer:     {{ $json.sender_name }} Email:        {{ $json.sender_email }} Received:     {{ $json.received_at }} Urgency:      {{ $json.urgency }} Sentiment:    {{ $json.sentiment }}  ISSUE: {{ $json.ai_summary }}  INTERNAL NOTE: {{ $json.internal_note }}  ORIGINAL MESSAGE: {{ $json.clean_body }}  AI SUGGESTED REPLY: {{ $json.draft_reply }}  Please investigate the payment status and respond to the customer within 4 hours.",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1776,
+        176
+      ],
+      "id": "de50391e-3333-4b47-acb3-27a840d6033a",
+      "name": "Finance Team Routing Email (Payment Failed)",
+      "webhookId": "66439485-e8a2-46c8-ad89-df39d3b55e01",
+      "alwaysOutputData": true,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "AmoHY1ToRGbbhSYT",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.sender_email }}",
+        "subject": "=Re: {{ $json.subject }}",
+        "emailType": "text",
+        "message": "={{ $json.draft_reply }}",
+        "options": {
+          "appendAttribution": false,
+          "ccList": "paarth.entre@gmail.com",
+          "replyTo": "paarth.entre@gmail.com"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1760,
+        368
+      ],
+      "id": "3de951a0-fc6d-485c-9eeb-69b6d98bb051",
+      "name": "Auto Reply for Delivery Delay",
+      "webhookId": "70fe25e4-4e3f-4e3e-8702-2d368ae2262a",
+      "alwaysOutputData": true,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "AmoHY1ToRGbbhSYT",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.sender_email }}",
+        "subject": "=Re: {{ $json.subject }}",
+        "emailType": "text",
+        "message": "={{ $json.draft_reply }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1760,
+        608
+      ],
+      "id": "f1805350-faea-48cf-a782-f3c9d6ba0a80",
+      "name": "Auto Reply for General / Low Priority",
+      "webhookId": "0c9ec85c-6afa-4437-be73-15eeb46759a8",
+      "alwaysOutputData": true,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "AmoHY1ToRGbbhSYT",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                5
+              ],
+              "triggerAtHour": 18
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        240,
+        416
+      ],
+      "id": "13e41598-b1ab-4d30-b473-459132897dbc",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "sendTo": "paarth.entre@gmail.com",
+        "subject": "={{ $json.subject }}",
+        "emailType": "text",
+        "message": "={{ $json.summary_email }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        864,
+        416
+      ],
+      "id": "2f789d4f-7043-42c1-b5c7-9be8a6c38680",
+      "name": "Send Weekly Summary Email",
+      "webhookId": "d9012287-c530-44ca-92c2-aeaedfee3303",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dqsxpBBcGwsL4xOx",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const allTickets = $input.all().map(i => i.json);\n\n// Filter to last 7 days\nconst now = new Date();\nconst sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\n\nconst weekTickets = allTickets.filter(t => {\n  if (!t.received_at) return false;\n  return new Date(t.received_at) >= sevenDaysAgo;\n});\n\nconst total = weekTickets.length;\n\nif (total === 0) {\n  return {\n    json: {\n      summary_email: `Weekly Support Summary\\n\\nNo support tickets received this week.\\n\\nHave a great weekend.`,\n      subject: `Weekly Support Summary — No Tickets This Week`\n    }\n  };\n}\n\n// Count by category\nconst byCat = weekTickets.reduce((acc, t) => {\n  acc[t.category] = (acc[t.category] || 0) + 1;\n  return acc;\n}, {});\n\n// Count by urgency\nconst byUrgency = weekTickets.reduce((acc, t) => {\n  acc[t.urgency] = (acc[t.urgency] || 0) + 1;\n  return acc;\n}, {});\n\n// Count by sentiment\nconst bySentiment = weekTickets.reduce((acc, t) => {\n  acc[t.sentiment] = (acc[t.sentiment] || 0) + 1;\n  return acc;\n}, {});\n\n// Count actions\nconst autoReplied  = weekTickets.filter(t => t.auto_reply_sent === 'Yes').length;\nconst escalated    = weekTickets.filter(t => t.escalated === 'Yes').length;\nconst routedFin    = weekTickets.filter(t => \n  t.action_taken === 'Routed to finance').length;\n\n// Top issue\nconst topCategory = Object.entries(byCat)\n  .sort((a, b) => b[1] - a[1])[0];\n\n// Format category breakdown\nconst catBreakdown = Object.entries(byCat)\n  .map(([cat, count]) => `  ${cat}: ${count}`)\n  .join('\\n');\n\nconst weekStart = sevenDaysAgo.toISOString().split('T')[0];\nconst weekEnd   = now.toISOString().split('T')[0];\n\nconst summaryEmail = `\nWEEKLY SUPPORT SUMMARY\nWeek of ${weekStart} to ${weekEnd}\n================================================\n\nVOLUME\nTotal tickets received:    ${total}\nHigh urgency escalated:    ${escalated}\nRouted to finance:         ${routedFin}\nAuto replies sent:         ${autoReplied}\n\nCATEGORY BREAKDOWN\n${catBreakdown}\n\nURGENCY BREAKDOWN\n  High:    ${byUrgency['High'] || 0}\n  Medium:  ${byUrgency['Medium'] || 0}\n  Low:     ${byUrgency['Low'] || 0}\n\nSENTIMENT BREAKDOWN\n  Angry:      ${bySentiment['Angry'] || 0}\n  Frustrated: ${bySentiment['Frustrated'] || 0}\n  Neutral:    ${bySentiment['Neutral'] || 0}\n  Positive:   ${bySentiment['Positive'] || 0}\n\nTOP ISSUE THIS WEEK\n${topCategory ? topCategory[0] + ' (' + topCategory[1] + ' tickets)' : 'N/A'}\n\n================================================\nThis report was auto-generated by your Customer Support System.\nFull ticket log available in your Google Sheet.\n`.trim();\n\nreturn {\n  json: {\n    summary_email: summaryEmail,\n    subject: `Weekly Support Summary — ${total} tickets | ${weekStart} to ${weekEnd}`\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        656,
+        416
+      ],
+      "id": "10b9ea25-7500-45e7-94df-93f14fc82e1a",
+      "name": "Build and Send Weekly Summary Email"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1rNbWFr_yVSA15R-pDMYQKq5U_yUXeQFCc5q0Vgff5kA",
+          "mode": "list",
+          "cachedResultName": "Ecommerce_BI_System",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1rNbWFr_yVSA15R-pDMYQKq5U_yUXeQFCc5q0Vgff5kA/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 25111677,
+          "mode": "list",
+          "cachedResultName": "Ticket_Log",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1rNbWFr_yVSA15R-pDMYQKq5U_yUXeQFCc5q0Vgff5kA/edit#gid=25111677"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        448,
+        416
+      ],
+      "id": "959ca95a-6eb8-47d2-bdc1-0ee1774c0ce4",
+      "name": "Read Full Ticket Log",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "uxTlXU5mWqsvdp7K",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1rNbWFr_yVSA15R-pDMYQKq5U_yUXeQFCc5q0Vgff5kA",
+          "mode": "list",
+          "cachedResultName": "Ecommerce_BI_System",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1rNbWFr_yVSA15R-pDMYQKq5U_yUXeQFCc5q0Vgff5kA/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 25111677,
+          "mode": "list",
+          "cachedResultName": "Ticket_Log",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1rNbWFr_yVSA15R-pDMYQKq5U_yUXeQFCc5q0Vgff5kA/edit#gid=25111677"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ticket_id": "={{ $('Parse Gemini Response').item.json.ticket_id }}",
+            "action_taken": "={{ $('Parse Gemini Response').item.json.urgency === 'High' ? 'Escalated to owner' : ($('Parse Gemini Response').item.json.category === 'Refund' || $('Parse Gemini Response').item.json.category === 'Payment Failed' ? 'Routed to finance' : 'Auto reply sent') }}",
+            "auto_reply_sent": "={{ $('Parse Gemini Response').item.json.urgency !== 'High' && $('Parse Gemini Response').item.json.category !== 'Refund' && $('Parse Gemini Response').item.json.category !== 'Payment Failed' ? 'Yes' : 'No' }}",
+            "escalated": "={{ $('Parse Gemini Response').item.json.urgency === 'High' ? 'Yes' : 'No' }}"
+          },
+          "matchingColumns": [
+            "ticket_id"
+          ],
+          "schema": [
+            {
+              "id": "ticket_id",
+              "displayName": "ticket_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "received_at",
+              "displayName": "received_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "customer_email",
+              "displayName": "customer_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "customer_name",
+              "displayName": "customer_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "subject",
+              "displayName": "subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "category",
+              "displayName": "category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "urgency",
+              "displayName": "urgency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "sentiment",
+              "displayName": "sentiment",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "ai_summary",
+              "displayName": "ai_summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "action_taken",
+              "displayName": "action_taken",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "auto_reply_sent",
+              "displayName": "auto_reply_sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "escalated",
+              "displayName": "escalated",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1728,
+        -272
+      ],
+      "id": "688db556-3fd6-4576-8bfc-04c4cc2274c4",
+      "name": "Update Ticket Log After Routing1",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "uxTlXU5mWqsvdp7K",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "markAsRead",
+        "messageId": "={{ $('Extract and Clean Email Content').item.json.message_id }}"
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2000,
+        -272
+      ],
+      "id": "6417a7f3-3e40-4c85-abb5-521a527725ad",
+      "name": "Mark a message as read1",
+      "webhookId": "86df7de2-fcec-4953-81b7-13ad6b5883ef",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "AmoHY1ToRGbbhSYT",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1rNbWFr_yVSA15R-pDMYQKq5U_yUXeQFCc5q0Vgff5kA",
+          "mode": "list",
+          "cachedResultName": "Ecommerce_BI_System",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1rNbWFr_yVSA15R-pDMYQKq5U_yUXeQFCc5q0Vgff5kA/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 25111677,
+          "mode": "list",
+          "cachedResultName": "Ticket_Log",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1rNbWFr_yVSA15R-pDMYQKq5U_yUXeQFCc5q0Vgff5kA/edit#gid=25111677"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ticket_id": "={{ $('Parse Gemini Response').item.json.ticket_id }}",
+            "action_taken": "={{ $('Parse Gemini Response').item.json.urgency === 'High' ? 'Escalated to owner' : ($('Parse Gemini Response').item.json.category === 'Refund' || $('Parse Gemini Response').item.json.category === 'Payment Failed' ? 'Routed to finance' : 'Auto reply sent') }}",
+            "auto_reply_sent": "={{ $('Parse Gemini Response').item.json.urgency !== 'High' && $('Parse Gemini Response').item.json.category !== 'Refund' && $('Parse Gemini Response').item.json.category !== 'Payment Failed' ? 'Yes' : 'No' }}",
+            "escalated": "={{ $('Parse Gemini Response').item.json.urgency === 'High' ? 'Yes' : 'No' }}"
+          },
+          "matchingColumns": [
+            "ticket_id"
+          ],
+          "schema": [
+            {
+              "id": "ticket_id",
+              "displayName": "ticket_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "received_at",
+              "displayName": "received_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "customer_email",
+              "displayName": "customer_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "customer_name",
+              "displayName": "customer_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "subject",
+              "displayName": "subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "category",
+              "displayName": "category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "urgency",
+              "displayName": "urgency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "sentiment",
+              "displayName": "sentiment",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "ai_summary",
+              "displayName": "ai_summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "action_taken",
+              "displayName": "action_taken",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "auto_reply_sent",
+              "displayName": "auto_reply_sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "escalated",
+              "displayName": "escalated",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2032,
+        -80
+      ],
+      "id": "09e56fcc-ebce-434b-8e3b-98d79ca5a69b",
+      "name": "Update Ticket Log After Routing",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "uxTlXU5mWqsvdp7K",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "markAsRead",
+        "messageId": "={{ $('Extract and Clean Email Content').item.json.message_id }}"
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2304,
+        -80
+      ],
+      "id": "c63b533c-5810-4cd2-92a7-26e85e048f7f",
+      "name": "Mark a message as read",
+      "webhookId": "86df7de2-fcec-4953-81b7-13ad6b5883ef",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "AmoHY1ToRGbbhSYT",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1rNbWFr_yVSA15R-pDMYQKq5U_yUXeQFCc5q0Vgff5kA",
+          "mode": "list",
+          "cachedResultName": "Ecommerce_BI_System",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1rNbWFr_yVSA15R-pDMYQKq5U_yUXeQFCc5q0Vgff5kA/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 25111677,
+          "mode": "list",
+          "cachedResultName": "Ticket_Log",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1rNbWFr_yVSA15R-pDMYQKq5U_yUXeQFCc5q0Vgff5kA/edit#gid=25111677"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ticket_id": "={{ $('Parse Gemini Response').item.json.ticket_id }}",
+            "action_taken": "={{ $('Parse Gemini Response').item.json.urgency === 'High' ? 'Escalated to owner' : ($('Parse Gemini Response').item.json.category === 'Refund' || $('Parse Gemini Response').item.json.category === 'Payment Failed' ? 'Routed to finance' : 'Auto reply sent') }}",
+            "auto_reply_sent": "={{ $('Parse Gemini Response').item.json.urgency !== 'High' && $('Parse Gemini Response').item.json.category !== 'Refund' && $('Parse Gemini Response').item.json.category !== 'Payment Failed' ? 'Yes' : 'No' }}",
+            "escalated": "={{ $('Parse Gemini Response').item.json.urgency === 'High' ? 'Yes' : 'No' }}"
+          },
+          "matchingColumns": [
+            "ticket_id"
+          ],
+          "schema": [
+            {
+              "id": "ticket_id",
+              "displayName": "ticket_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "received_at",
+              "displayName": "received_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "customer_email",
+              "displayName": "customer_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "customer_name",
+              "displayName": "customer_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "subject",
+              "displayName": "subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "category",
+              "displayName": "category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "urgency",
+              "displayName": "urgency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "sentiment",
+              "displayName": "sentiment",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "ai_summary",
+              "displayName": "ai_summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "action_taken",
+              "displayName": "action_taken",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "auto_reply_sent",
+              "displayName": "auto_reply_sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "escalated",
+              "displayName": "escalated",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2064,
+        176
+      ],
+      "id": "3886eb01-b6ed-4f30-bde4-44285f754a79",
+      "name": "Update Ticket Log After Routing2",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "uxTlXU5mWqsvdp7K",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "markAsRead",
+        "messageId": "={{ $('Extract and Clean Email Content').item.json.message_id }}"
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2336,
+        176
+      ],
+      "id": "5b2ca92c-6f24-49e7-9361-60006f035bf7",
+      "name": "Mark a message as read2",
+      "webhookId": "86df7de2-fcec-4953-81b7-13ad6b5883ef",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "AmoHY1ToRGbbhSYT",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1rNbWFr_yVSA15R-pDMYQKq5U_yUXeQFCc5q0Vgff5kA",
+          "mode": "list",
+          "cachedResultName": "Ecommerce_BI_System",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1rNbWFr_yVSA15R-pDMYQKq5U_yUXeQFCc5q0Vgff5kA/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 25111677,
+          "mode": "list",
+          "cachedResultName": "Ticket_Log",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1rNbWFr_yVSA15R-pDMYQKq5U_yUXeQFCc5q0Vgff5kA/edit#gid=25111677"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ticket_id": "={{ $('Parse Gemini Response').item.json.ticket_id }}",
+            "action_taken": "={{ $('Parse Gemini Response').item.json.urgency === 'High' ? 'Escalated to owner' : ($('Parse Gemini Response').item.json.category === 'Refund' || $('Parse Gemini Response').item.json.category === 'Payment Failed' ? 'Routed to finance' : 'Auto reply sent') }}",
+            "auto_reply_sent": "={{ $('Parse Gemini Response').item.json.urgency !== 'High' && $('Parse Gemini Response').item.json.category !== 'Refund' && $('Parse Gemini Response').item.json.category !== 'Payment Failed' ? 'Yes' : 'No' }}",
+            "escalated": "={{ $('Parse Gemini Response').item.json.urgency === 'High' ? 'Yes' : 'No' }}"
+          },
+          "matchingColumns": [
+            "ticket_id"
+          ],
+          "schema": [
+            {
+              "id": "ticket_id",
+              "displayName": "ticket_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "received_at",
+              "displayName": "received_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "customer_email",
+              "displayName": "customer_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "customer_name",
+              "displayName": "customer_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "subject",
+              "displayName": "subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "category",
+              "displayName": "category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "urgency",
+              "displayName": "urgency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "sentiment",
+              "displayName": "sentiment",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "ai_summary",
+              "displayName": "ai_summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "action_taken",
+              "displayName": "action_taken",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "auto_reply_sent",
+              "displayName": "auto_reply_sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "escalated",
+              "displayName": "escalated",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2048,
+        368
+      ],
+      "id": "17d6d6f3-50f1-4e80-8ee7-6f471b6aa861",
+      "name": "Update Ticket Log After Routing3",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "uxTlXU5mWqsvdp7K",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "markAsRead",
+        "messageId": "={{ $('Extract and Clean Email Content').item.json.message_id }}"
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2320,
+        368
+      ],
+      "id": "dfd5774b-2720-4278-9eae-53913deb9563",
+      "name": "Mark a message as read3",
+      "webhookId": "86df7de2-fcec-4953-81b7-13ad6b5883ef",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "AmoHY1ToRGbbhSYT",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1rNbWFr_yVSA15R-pDMYQKq5U_yUXeQFCc5q0Vgff5kA",
+          "mode": "list",
+          "cachedResultName": "Ecommerce_BI_System",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1rNbWFr_yVSA15R-pDMYQKq5U_yUXeQFCc5q0Vgff5kA/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 25111677,
+          "mode": "list",
+          "cachedResultName": "Ticket_Log",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1rNbWFr_yVSA15R-pDMYQKq5U_yUXeQFCc5q0Vgff5kA/edit#gid=25111677"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ticket_id": "={{ $('Parse Gemini Response').item.json.ticket_id }}",
+            "action_taken": "={{ $('Parse Gemini Response').item.json.urgency === 'High' ? 'Escalated to owner' : ($('Parse Gemini Response').item.json.category === 'Refund' || $('Parse Gemini Response').item.json.category === 'Payment Failed' ? 'Routed to finance' : 'Auto reply sent') }}",
+            "auto_reply_sent": "={{ $('Parse Gemini Response').item.json.urgency !== 'High' && $('Parse Gemini Response').item.json.category !== 'Refund' && $('Parse Gemini Response').item.json.category !== 'Payment Failed' ? 'Yes' : 'No' }}",
+            "escalated": "={{ $('Parse Gemini Response').item.json.urgency === 'High' ? 'Yes' : 'No' }}"
+          },
+          "matchingColumns": [
+            "ticket_id"
+          ],
+          "schema": [
+            {
+              "id": "ticket_id",
+              "displayName": "ticket_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "received_at",
+              "displayName": "received_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "customer_email",
+              "displayName": "customer_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "customer_name",
+              "displayName": "customer_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "subject",
+              "displayName": "subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "category",
+              "displayName": "category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "urgency",
+              "displayName": "urgency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "sentiment",
+              "displayName": "sentiment",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "ai_summary",
+              "displayName": "ai_summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "action_taken",
+              "displayName": "action_taken",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "auto_reply_sent",
+              "displayName": "auto_reply_sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "escalated",
+              "displayName": "escalated",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2048,
+        608
+      ],
+      "id": "a4859998-8bcf-4cbb-b0fc-37e91ed398c2",
+      "name": "Update Ticket Log After Routing4",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "uxTlXU5mWqsvdp7K",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "markAsRead",
+        "messageId": "={{ $('Extract and Clean Email Content').item.json.message_id }}"
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2320,
+        608
+      ],
+      "id": "09bf5698-4403-48bc-9f52-158be7b2ae3c",
+      "name": "Mark a message as read4",
+      "webhookId": "86df7de2-fcec-4953-81b7-13ad6b5883ef",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "AmoHY1ToRGbbhSYT",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract and Clean Email Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract and Clean Email Content": {
+      "main": [
+        [
+          {
+            "node": "Gemini AI Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini AI Analysis": {
+      "main": [
+        [
+          {
+            "node": "Parse Gemini Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Gemini Response": {
+      "main": [
+        [
+          {
+            "node": "Log Ticket to Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Ticket to Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Route by Urgency and Category",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Urgency and Category": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Finance Team Routing Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Finance Team Routing Email (Payment Failed)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Auto Reply for Delivery Delay",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Auto Reply for General / Low Priority",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message": {
+      "main": [
+        [
+          {
+            "node": "Update Ticket Log After Routing1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finance Team Routing Email": {
+      "main": [
+        [
+          {
+            "node": "Update Ticket Log After Routing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finance Team Routing Email (Payment Failed)": {
+      "main": [
+        [
+          {
+            "node": "Update Ticket Log After Routing2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auto Reply for Delivery Delay": {
+      "main": [
+        [
+          {
+            "node": "Update Ticket Log After Routing3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auto Reply for General / Low Priority": {
+      "main": [
+        [
+          {
+            "node": "Update Ticket Log After Routing4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Full Ticket Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build and Send Weekly Summary Email": {
+      "main": [
+        [
+          {
+            "node": "Send Weekly Summary Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Full Ticket Log": {
+      "main": [
+        [
+          {
+            "node": "Build and Send Weekly Summary Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Ticket Log After Routing1": {
+      "main": [
+        [
+          {
+            "node": "Mark a message as read1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Ticket Log After Routing": {
+      "main": [
+        [
+          {
+            "node": "Mark a message as read",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Ticket Log After Routing2": {
+      "main": [
+        [
+          {
+            "node": "Mark a message as read2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Ticket Log After Routing3": {
+      "main": [
+        [
+          {
+            "node": "Mark a message as read3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Ticket Log After Routing4": {
+      "main": [
+        [
+          {
+            "node": "Mark a message as read4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "a7e8ff7a-9a0e-4db7-85b0-c04720d75abe",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "feeb2cda2ef78b5561e3d0628dcd9fa6b770bf0bcf8da1ed704e87330759e5c4"
+  },
+  "id": "Oidx6BtfsD6hlUMe",
+  "tags": []
+}

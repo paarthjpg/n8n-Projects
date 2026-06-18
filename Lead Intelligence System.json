@@ -1,0 +1,656 @@
+{
+  "name": "Lead Intelligence System",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-intake",
+        "options": {
+          "responseCode": {
+            "values": {}
+          }
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -16,
+        -80
+      ],
+      "id": "1a04b4f6-1ddd-4093-abe4-21dd1e021265",
+      "name": "Webhook",
+      "webhookId": "7a2c4cfc-6401-4c0d-8f40-f99e6734dde2"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const fields = $input.item.json.body.data.fields;\n\nfunction getField(labelName) {\n  return fields.find(\n    f => f.label && f.label.trim().toLowerCase() === labelName.trim().toLowerCase()\n  ) || null;\n}\n\nfunction getValue(field) {\n  if (!field || field.value === null || field.value === undefined) return '';\n\n  const type = field.type;\n\n  if (\n    type === 'INPUT_TEXT' ||\n    type === 'INPUT_EMAIL' ||\n    type === 'INPUT_PHONE_NUMBER' ||\n    type === 'INPUT_NUMBER' ||\n    type === 'TEXTAREA' ||\n    type === 'INPUT_DATE' ||\n    type === 'INPUT_TIME'\n  ) {\n    return String(field.value).trim();\n  }\n\n  if (type === 'INPUT_LINK') {\n    let url = String(field.value).trim();\n    if (url && !url.startsWith('http://') && !url.startsWith('https://')) {\n      url = 'https://' + url;\n    }\n    return url;\n  }\n\n  if (type === 'DROPDOWN' || type === 'MULTIPLE_CHOICE' || type === 'MULTI_SELECT') {\n    const selectedIds = Array.isArray(field.value) ? field.value : [field.value];\n    const options = field.options || [];\n    const matched = options\n      .filter(opt => selectedIds.includes(opt.id))\n      .map(opt => opt.text);\n    return matched.join(', ');\n  }\n\n  return String(field.value).trim();\n}\n\nconst leadId = Date.now().toString() + Math.floor(Math.random() * 1000).toString();\n\nreturn {\n  json: {\n    lead_id:       leadId,\n    first_name:    getValue(getField('First Name')),\n    last_name:     getValue(getField('Last Name')),\n    company_name:  getValue(getField('Company Name')),\n    website_url:   getValue(getField('Website URL')),\n    industry:      getValue(getField('Industry')),\n    email:         getValue(getField('Email Address')),\n    status:        '',\n    contacted_at:  '',\n    email_subject: '',\n    email_body:    '',\n    submitted_at:  new Date().toISOString()\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        192,
+        -80
+      ],
+      "id": "88aeb248-536e-4af3-88ab-9e2639a820ad",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b050c2ff-2947-4599-9f4d-cfa30abd47e9",
+              "leftValue": "={{ $json.email }}",
+              "rightValue": "={{ $json.website_url }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "2a659ea0-356c-4660-b8e0-ed034d974e59",
+              "leftValue": "={{ $json.website_url }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        400,
+        -80
+      ],
+      "id": "b4590d8c-0f1a-4179-b86d-c09479f4728c",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "10ak0KRx0IU2D4yWgBvM0rfDJ1HGMHubqdBRc-kkPVEQ",
+          "mode": "list",
+          "cachedResultName": "Leads ",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/10ak0KRx0IU2D4yWgBvM0rfDJ1HGMHubqdBRc-kkPVEQ/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1811997192,
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/10ak0KRx0IU2D4yWgBvM0rfDJ1HGMHubqdBRc-kkPVEQ/edit#gid=1811997192"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "lead_id": "={{ $json.lead_id }}",
+            "first_name": "={{ $json.first_name }}",
+            "last_name": "={{ $json.last_name }}",
+            "company_name": "={{ $json.company_name }}",
+            "website_url": "={{ $json.website_url }}",
+            "industry": "={{ $json.industry }}",
+            "email": "={{ $json.email }}",
+            "status": "={{ $json.status }}",
+            "contacted_at": "={{ $json.contacted_at }}",
+            "email_subject": "={{ $json.email_subject }}",
+            "email_body": "={{ $json.email_body }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "first_name",
+              "displayName": "first_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "last_name",
+              "displayName": "last_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company_name",
+              "displayName": "company_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "website_url",
+              "displayName": "website_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "industry",
+              "displayName": "industry",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "contacted_at",
+              "displayName": "contacted_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email_subject",
+              "displayName": "email_subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email_body",
+              "displayName": "email_body",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        624,
+        -96
+      ],
+      "id": "1b2e67d6-fec7-4d5e-9ffe-2e57982a8bdb",
+      "name": "Append row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "uxTlXU5mWqsvdp7K",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1uvVKi79ojByQn9O4hqa0nbfmMzq2PRZweb9cUR0nwPw",
+          "mode": "list",
+          "cachedResultName": "Leads ",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1uvVKi79ojByQn9O4hqa0nbfmMzq2PRZweb9cUR0nwPw/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1uvVKi79ojByQn9O4hqa0nbfmMzq2PRZweb9cUR0nwPw/edit#gid=0"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        848,
+        -96
+      ],
+      "id": "bc5c8079-97f0-4b1d-8036-abcb22fbd9e9",
+      "name": "Get row(s) in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "uxTlXU5mWqsvdp7K",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.website_url }}",
+        "options": {
+          "allowUnauthorizedCerts": true,
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1072,
+        -96
+      ],
+      "id": "db9a3827-e800-44e0-b6b7-48933f0f6786",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get website HTML from HTTP Request node (current input)\nconst htmlContent = $input.item.json.data || \n                    $input.item.json.body || \n                    $input.item.json || '';\n\nconst rawHtml = typeof htmlContent === 'string' \n  ? htmlContent \n  : JSON.stringify(htmlContent);\n\n// Clean the HTML\nlet cleaned = rawHtml.replace(/<script[^>]*>[\\s\\S]*?<\\/script>/gi, '');\ncleaned = cleaned.replace(/<style[^>]*>[\\s\\S]*?<\\/style>/gi, '');\ncleaned = cleaned.replace(/<[^>]+>/g, ' ');\ncleaned = cleaned.replace(/\\s+/g, ' ').trim();\ncleaned = cleaned.substring(0, 3000);\n\n// Pull lead fields from Get row(s) in sheet node\n// This node has your lead data — reference it by its exact node name\nconst leadData = $('Get row(s) in sheet').item.json;\n\nreturn {\n  json: {\n    lead_id:       leadData.lead_id,\n    first_name:    leadData.first_name,\n    last_name:     leadData.last_name,\n    company_name:  leadData.company_name,\n    website_url:   leadData.website_url,\n    industry:      leadData.industry,\n    email:         leadData.email,\n    website_text:  cleaned\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1280,
+        -96
+      ],
+      "id": "1bff060a-d869-4030-925b-a5ec3bc2a7c1",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-flash-lite",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-flash-lite"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "={\n  \"contents\": [\n    {\n      \"parts\": [\n        {\n          \"text\": \"You are an expert cold email copywriter for an AI automation agency based in India that builds n8n workflow automations for businesses.\\n\\nHere is information about a business lead:\\n- Name: {{ $json.first_name }} {{ $json.last_name }}\\n- Company: {{ $json.company_name }}\\n- Industry: {{ $json.industry }}\\n- Website Content: {{ $json.website_text }}\\n\\nYour task:\\n1. Analyze their website content and identify ONE specific operational or business process that could clearly benefit from AI automation\\n2. Write a cold outreach email from the perspective of an AI automation specialist\\n\\nRules for the email:\\n- Subject line must be specific to their business, not generic\\n- Opening line must reference something real and specific from their website — not generic flattery\\n- Mention the specific pain point you identified\\n- Briefly explain how AI workflow automation solves it\\n- End with one soft call to action asking for a 15 minute call\\n- Total email body must be between 120 and 160 words\\n- Tone must be professional but conversational — not salesy\\n- Do not use words like 'revolutionize' or 'transform' or 'game-changer'\\n\\nRespond ONLY with a valid JSON object in this exact format, no extra text, no markdown, no code blocks:\\n{\\\"subject\\\": \\\"email subject line here\\\", \\\"body\\\": \\\"full email body here\\\", \\\"pain_point_identified\\\": \\\"one sentence describing the pain point you found\\\", \\\"personalization_hook\\\": \\\"the specific thing from their website you referenced\\\"}\"\n        }\n      ]\n    }\n  ],\n  \"generationConfig\": {\n    \"temperature\": 0.7,\n    \"maxOutputTokens\": 1000\n  }\n}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        1248,
+        176
+      ],
+      "id": "2af89857-1c09-4375-bc5c-4aed8aba89db",
+      "name": "Message a model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "uwq2WOykU1qjidXz",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// \"Message a model\" node returns content at this exact path\nconst rawText = $input.item.json.content.parts[0].text;\n\n// Clean in case Gemini adds markdown despite instructions\nconst cleanedText = rawText\n  .replace(/```json/g, '')\n  .replace(/```/g, '')\n  .trim();\n\n// Parse the JSON\nlet parsed;\ntry {\n  parsed = JSON.parse(cleanedText);\n} catch(e) {\n  // Fallback if JSON parse fails\n  const leadFallback = $('Code in JavaScript1').item.json;\n  return {\n    json: {\n      ...leadFallback,\n      parse_error: true,\n      subject: 'Follow up from AI Automation Specialist',\n      body: 'Hi ' + leadFallback.first_name + ', I came across your business and wanted to reach out about how AI automation could help streamline your operations. Would you be open to a quick 15 minute call?',\n      pain_point_identified: 'Could not parse',\n      personalization_hook: 'Could not parse'\n    }\n  };\n}\n\n// Pull lead fields from Code in JavaScript1 node\nconst leadData = $('Code in JavaScript1').item.json;\n\nreturn {\n  json: {\n    lead_id:                leadData.lead_id,\n    first_name:             leadData.first_name,\n    last_name:              leadData.last_name,\n    company_name:           leadData.company_name,\n    website_url:            leadData.website_url,\n    industry:               leadData.industry,\n    email:                  leadData.email,\n    subject:                parsed.subject,\n    body:                   parsed.body,\n    pain_point_identified:  parsed.pain_point_identified,\n    personalization_hook:   parsed.personalization_hook,\n    parse_error:            false\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        432
+      ],
+      "id": "fef24b95-bac7-4eb9-8df3-a91a8d177a53",
+      "name": "Code in JavaScript2"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "text",
+        "message": "={{ $json.body }}",
+        "options": {
+          "appendAttribution": false,
+          "senderName": "Tesla"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1584,
+        432
+      ],
+      "id": "ced84bf4-4892-487d-bfdb-7824d20be890",
+      "name": "Send a message",
+      "webhookId": "bafeb6b0-7b4e-463d-af39-4d5b11f3b39a",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dqsxpBBcGwsL4xOx",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1uvVKi79ojByQn9O4hqa0nbfmMzq2PRZweb9cUR0nwPw",
+          "mode": "list",
+          "cachedResultName": "Leads ",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1uvVKi79ojByQn9O4hqa0nbfmMzq2PRZweb9cUR0nwPw/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1uvVKi79ojByQn9O4hqa0nbfmMzq2PRZweb9cUR0nwPw/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "lead_id": "={{ $('Code in JavaScript2').item.json.lead_id }}",
+            "status": "Contacted",
+            "contacted_at": "={{ new Date().toISOString() }}",
+            "email_subject": "={{ $('Code in JavaScript2').item.json.subject }}",
+            "email_body": "={{ $('Code in JavaScript2').item.json.body }}"
+          },
+          "matchingColumns": [
+            "lead_id"
+          ],
+          "schema": [
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "first_name",
+              "displayName": "first_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "last_name",
+              "displayName": "last_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "company_name",
+              "displayName": "company_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "website_url",
+              "displayName": "website_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "industry",
+              "displayName": "industry",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "contacted_at",
+              "displayName": "contacted_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email_subject",
+              "displayName": "email_subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email_body",
+              "displayName": "email_body",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1840,
+        432
+      ],
+      "id": "7d95d4ec-cf2a-43e9-b981-b908c300bc32",
+      "name": "Append or update row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "uxTlXU5mWqsvdp7K",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Append row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append row in sheet": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Message a model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message": {
+      "main": [
+        [
+          {
+            "node": "Append or update row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "1c7ab6c6-0415-428a-98a7-5a4275346015",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "feeb2cda2ef78b5561e3d0628dcd9fa6b770bf0bcf8da1ed704e87330759e5c4"
+  },
+  "id": "Ixti9WHalxIP3p6r",
+  "tags": []
+}

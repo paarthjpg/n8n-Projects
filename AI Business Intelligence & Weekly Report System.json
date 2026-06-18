@@ -1,0 +1,363 @@
+{
+  "name": "AI Business Intelligence & Weekly Report System",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "cab1d512-4f71-490d-8422-5fd5245af05c",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1ycILdmWzSTdhafsSV1-moLGV-bFmJT0FOWG3UqB_aCw",
+          "mode": "list",
+          "cachedResultName": "Ecommerce_BI_System",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1ycILdmWzSTdhafsSV1-moLGV-bFmJT0FOWG3UqB_aCw/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 937768902,
+          "mode": "list",
+          "cachedResultName": "Orders",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1ycILdmWzSTdhafsSV1-moLGV-bFmJT0FOWG3UqB_aCw/edit#gid=937768902"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        208,
+        0
+      ],
+      "id": "42197dad-1763-42ed-b10c-eb74e7179418",
+      "name": "Read Orders",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "uxTlXU5mWqsvdp7K",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1ycILdmWzSTdhafsSV1-moLGV-bFmJT0FOWG3UqB_aCw",
+          "mode": "list",
+          "cachedResultName": "Ecommerce_BI_System",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1ycILdmWzSTdhafsSV1-moLGV-bFmJT0FOWG3UqB_aCw/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 500849891,
+          "mode": "list",
+          "cachedResultName": "Feedback",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1ycILdmWzSTdhafsSV1-moLGV-bFmJT0FOWG3UqB_aCw/edit#gid=500849891"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        400,
+        0
+      ],
+      "id": "9b4e1861-6981-4642-955d-f60ec6802136",
+      "name": "Read Feedback",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "uxTlXU5mWqsvdp7K",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1ycILdmWzSTdhafsSV1-moLGV-bFmJT0FOWG3UqB_aCw",
+          "mode": "list",
+          "cachedResultName": "Ecommerce_BI_System",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1ycILdmWzSTdhafsSV1-moLGV-bFmJT0FOWG3UqB_aCw/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1380500868,
+          "mode": "list",
+          "cachedResultName": "Support_Tickets",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1ycILdmWzSTdhafsSV1-moLGV-bFmJT0FOWG3UqB_aCw/edit#gid=1380500868"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        608,
+        0
+      ],
+      "id": "377a493f-0ce1-4f1d-ae84-53718a3117dc",
+      "name": "Read Support Tickets",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "uxTlXU5mWqsvdp7K",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-robotics-er-1.5-preview",
+          "mode": "list",
+          "cachedResultName": "models/gemini-robotics-er-1.5-preview"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "={\n  \"contents\": [\n    {\n      \"parts\": [\n        {\n          \"text\": \"You are a senior business intelligence analyst specializing in e-commerce businesses in India. You have been given one week of business data from an e-commerce brand.\\n\\nHere is the structured data:\\n{{ $json.structured_summary }}\\n\\nYour task is to analyze this data deeply and produce a business intelligence report.\\n\\nAnalysis requirements:\\n1. Identify the top 3 performance trends this week (positive or negative)\\n2. Flag any anomalies or warning signs that the business owner must pay attention to\\n3. Analyze customer sentiment based on ratings and review content\\n4. Assess support ticket load and identify any systemic issues\\n5. Give exactly 2 specific, actionable recommendations the business owner should implement THIS week — not generic advice, specific actions based on the data\\n\\nRespond ONLY with a valid JSON object in this exact format, no extra text, no markdown, no code blocks:\\n{\\n  \\\"executive_summary\\\": \\\"3-4 sentence overview of the week\\\",\\n  \\\"top_trends\\\": [\\n    {\\\"trend\\\": \\\"description\\\", \\\"impact\\\": \\\"positive or negative\\\", \\\"data_point\\\": \\\"specific number that supports this\\\"}, \\n    {\\\"trend\\\": \\\"description\\\", \\\"impact\\\": \\\"positive or negative\\\", \\\"data_point\\\": \\\"specific number\\\"},\\n    {\\\"trend\\\": \\\"description\\\", \\\"impact\\\": \\\"positive or negative\\\", \\\"data_point\\\": \\\"specific number\\\"}\\n  ],\\n  \\\"anomalies\\\": [\\\"anomaly 1\\\", \\\"anomaly 2\\\"],\\n  \\\"customer_sentiment\\\": {\\\"overall\\\": \\\"Positive/Neutral/Negative\\\", \\\"summary\\\": \\\"2 sentence sentiment analysis\\\"},\\n  \\\"support_health\\\": {\\\"status\\\": \\\"Healthy/At Risk/Critical\\\", \\\"summary\\\": \\\"1-2 sentence support assessment\\\"},\\n  \\\"recommendation_1\\\": {\\\"action\\\": \\\"specific action title\\\", \\\"detail\\\": \\\"exactly what to do and why based on the data\\\"},\\n  \\\"recommendation_2\\\": {\\\"action\\\": \\\"specific action title\\\", \\\"detail\\\": \\\"exactly what to do and why based on the data\\\"}\\n}\"\n        }\n      ]\n    }\n  ],\n  \"generationConfig\": {\n    \"temperature\": 0.4,\n    \"maxOutputTokens\": 1500\n  }\n}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        1024,
+        0
+      ],
+      "id": "ab2f697e-a18a-49fd-9fcb-cd66b51f346b",
+      "name": "Message a model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "uwq2WOykU1qjidXz",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "paarth.ganesh@gmail.com",
+        "subject": "=Weekly Business Report — Week of {{ $json.week_start }} \n Revenue: ₹{{ $json.total_revenue }}",
+        "message": "={{ $json.html_report }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1760,
+        0
+      ],
+      "id": "ec6044f5-d9f2-4740-b800-daab98d44867",
+      "name": "Send a message",
+      "webhookId": "84af5fef-a31d-45ea-a957-6c9f6619eeb5",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dqsxpBBcGwsL4xOx",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "paarth.entre@gmail.com",
+        "subject": "=BI Report Sent - {{ $('Format HTML Report').item.json.week_start }} | {{ $('Format HTML Report').item.json.total_orders }} orders | ₹{{ $('Format HTML Report').item.json.total_revenue }}",
+        "message": "=Weekly BI report has been generated and sent. \nPeriod: {{ $('Format HTML Report').item.json.week_start }} to {{ $('Format HTML Report').item.json.week_end }} \nTotal Orders: {{ $('Format HTML Report').item.json.total_orders }} \nTotal Revenue: ₹{{ $('Format HTML Report').item.json.total_revenue }} \nAvg Order Value: ₹{{ $('Format HTML Report').item.json.avg_order_value }} \nTop Category: {{ $('Format HTML Report').item.json.top_category }} \nAvg Customer Rating: {{ $('Format HTML Report').item.json.avg_rating }} \nOpen Support Tickets: {{ $('Format HTML Report').item.json.open_tickets }} \nSentiment: {{ $('Format HTML Report').item.json.customer_sentiment.overall }} \nSupport Health: {{ $('Format HTML Report').item.json.support_health.status }} \n\nRun timestamp: {{ $('Format HTML Report').item.json.run_timestamp }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1968,
+        0
+      ],
+      "id": "d5db221b-af95-413c-aca9-de2fcae26560",
+      "name": "Send a message1",
+      "webhookId": "ee73c845-abf8-42fa-8861-3194bb272070",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dqsxpBBcGwsL4xOx",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const orders  = $('Read Orders').all().map(i => i.json);\nconst feedback = $('Read Feedback').all().map(i => i.json);\nconst tickets  = $('Read Support Tickets').all().map(i => i.json);\n\n// Get date range — last 7 days\nconst now = new Date();\nconst sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\n\nfunction isWithinLastWeek(dateStr) {\n  if (!dateStr) return false;\n  const d = new Date(dateStr);\n  return d >= sevenDaysAgo && d <= now;\n}\n\n// Filter to last 7 days\nconst recentOrders = orders.filter(o => isWithinLastWeek(o.order_date));\nconst recentFeedback = feedback.filter(f => isWithinLastWeek(f.feedback_date));\nconst recentTickets = tickets.filter(t => isWithinLastWeek(t.ticket_date));\n\n// ── ORDERS ANALYSIS ──────────────────────────────────────\n\nconst totalOrders = recentOrders.length;\n\nconst totalRevenue = recentOrders\n  .filter(o => o.order_status === 'Delivered')\n  .reduce((sum, o) => sum + (parseFloat(o.total_amount) || 0), 0);\n\nconst avgOrderValue = totalOrders > 0 \n  ? (totalRevenue / totalOrders).toFixed(2) \n  : 0;\n\n// Count by status\nconst statusCounts = recentOrders.reduce((acc, o) => {\n  acc[o.order_status] = (acc[o.order_status] || 0) + 1;\n  return acc;\n}, {});\n\n// Revenue by category\nconst categoryRevenue = recentOrders\n  .filter(o => o.order_status === 'Delivered')\n  .reduce((acc, o) => {\n    acc[o.category] = (acc[o.category] || 0) + (parseFloat(o.total_amount) || 0);\n    return acc;\n  }, {});\n\nconst topCategory = Object.entries(categoryRevenue)\n  .sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';\n\n// Revenue by city\nconst cityRevenue = recentOrders\n  .filter(o => o.order_status === 'Delivered')\n  .reduce((acc, o) => {\n    acc[o.city] = (acc[o.city] || 0) + (parseFloat(o.total_amount) || 0);\n    return acc;\n  }, {});\n\nconst topCity = Object.entries(cityRevenue)\n  .sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';\n\n// Payment method breakdown\nconst paymentCounts = recentOrders.reduce((acc, o) => {\n  acc[o.payment_method] = (acc[o.payment_method] || 0) + 1;\n  return acc;\n}, {});\n\n// Cancellation and return rates\nconst cancelRate = totalOrders > 0 \n  ? ((statusCounts['Cancelled'] || 0) / totalOrders * 100).toFixed(1) \n  : 0;\n\nconst returnRate = totalOrders > 0 \n  ? ((statusCounts['Returned'] || 0) / totalOrders * 100).toFixed(1) \n  : 0;\n\n// ── FEEDBACK ANALYSIS ────────────────────────────────────\n\nconst totalFeedback = recentFeedback.length;\n\nconst avgRating = totalFeedback > 0\n  ? (recentFeedback.reduce((sum, f) => sum + (parseFloat(f.rating) || 0), 0) / totalFeedback).toFixed(2)\n  : 0;\n\nconst ratingDistribution = recentFeedback.reduce((acc, f) => {\n  const r = String(f.rating);\n  acc[r] = (acc[r] || 0) + 1;\n  return acc;\n}, {});\n\nconst negativeFeedback = recentFeedback\n  .filter(f => parseFloat(f.rating) <= 2)\n  .map(f => `[${f.product_name}] ${f.review_text}`)\n  .slice(0, 5); // Top 5 most critical\n\nconst positiveFeedback = recentFeedback\n  .filter(f => parseFloat(f.rating) >= 4)\n  .map(f => `[${f.product_name}] ${f.review_text}`)\n  .slice(0, 5);\n\n// Feedback by type\nconst feedbackTypeCounts = recentFeedback.reduce((acc, f) => {\n  acc[f.feedback_type] = (acc[f.feedback_type] || 0) + 1;\n  return acc;\n}, {});\n\n// ── SUPPORT TICKETS ANALYSIS ─────────────────────────────\n\nconst totalTickets = recentTickets.length;\nconst openTickets = recentTickets.filter(t => t.status === 'Open').length;\nconst resolvedTickets = recentTickets.filter(t => t.status === 'Resolved').length;\nconst escalatedTickets = recentTickets.filter(t => t.status === 'Escalated').length;\nconst highPriorityTickets = recentTickets.filter(t => t.priority === 'High').length;\n\nconst issueCategoryCounts = recentTickets.reduce((acc, t) => {\n  acc[t.issue_category] = (acc[t.issue_category] || 0) + 1;\n  return acc;\n}, {});\n\nconst topIssueCategory = Object.entries(issueCategoryCounts)\n  .sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';\n\nconst resolvedOnly = recentTickets.filter(t => \n  t.status === 'Resolved' && t.resolution_time_hours\n);\nconst avgResolutionTime = resolvedOnly.length > 0\n  ? (resolvedOnly.reduce((sum, t) => sum + (parseFloat(t.resolution_time_hours) || 0), 0) / resolvedOnly.length).toFixed(1)\n  : 'N/A';\n\n// ── BUILD STRUCTURED SUMMARY FOR GEMINI ──────────────────\n\nconst weekStart = sevenDaysAgo.toISOString().split('T')[0];\nconst weekEnd = now.toISOString().split('T')[0];\n\nconst structuredSummary = {\n  period: `${weekStart} to ${weekEnd}`,\n  orders: {\n    total_orders: totalOrders,\n    total_revenue_inr: Math.round(totalRevenue),\n    avg_order_value_inr: avgOrderValue,\n    top_category: topCategory,\n    top_city: topCity,\n    cancellation_rate_percent: cancelRate,\n    return_rate_percent: returnRate,\n    status_breakdown: statusCounts,\n    payment_method_breakdown: paymentCounts,\n    category_revenue_breakdown: categoryRevenue\n  },\n  customer_feedback: {\n    total_reviews: totalFeedback,\n    average_rating: avgRating,\n    rating_distribution: ratingDistribution,\n    feedback_type_breakdown: feedbackTypeCounts,\n    sample_negative_reviews: negativeFeedback,\n    sample_positive_reviews: positiveFeedback\n  },\n  support_tickets: {\n    total_tickets: totalTickets,\n    open_tickets: openTickets,\n    resolved_tickets: resolvedTickets,\n    escalated_tickets: escalatedTickets,\n    high_priority_tickets: highPriorityTickets,\n    top_issue_category: topIssueCategory,\n    issue_category_breakdown: issueCategoryCounts,\n    avg_resolution_time_hours: avgResolutionTime\n  }\n};\n\nreturn {\n  json: {\n    week_start: weekStart,\n    week_end: weekEnd,\n    total_revenue: Math.round(totalRevenue),\n    total_orders: totalOrders,\n    avg_order_value: avgOrderValue,\n    top_category: topCategory,\n    avg_rating: avgRating,\n    open_tickets: openTickets,\n    top_issue_category: topIssueCategory,\n    structured_summary: JSON.stringify(structuredSummary, null, 2)\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        816,
+        0
+      ],
+      "id": "42c725ab-e8ac-4408-8658-b4914f4bcb52",
+      "name": "Merge and Analyze All Data"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// 1. Fix: Access Gemini output using the correct path from your Input panel\nconst rawText = $input.item.json.content.parts[0].text;\n\n// Clean markdown\nconst cleanedText = rawText\n  .replace(/```json/g, '')\n  .replace(/```/g, '')\n  .trim();\n\n// Parse the JSON\nlet analysis;\ntry {\n  analysis = JSON.parse(cleanedText);\n} catch(e) {\n  analysis = {\n    executive_summary: \"Analysis could not be parsed this week.\",\n    top_trends: []\n  };\n}\n\n// 2. Fix: Reference the correct node name 'Code in JavaScript' (Node 5 in your workflow)\nconst metrics = $('Merge and Analyze All Data').item.json;\n\nreturn {\n  json: {\n    week_start:           metrics.week_start,\n    week_end:             metrics.week_end,\n    total_revenue:        metrics.total_revenue,\n    total_orders:         metrics.total_orders,\n    avg_order_value:      metrics.avg_order_value,\n    top_category:         metrics.top_category,\n    avg_rating:           metrics.avg_rating,\n    open_tickets:         metrics.open_tickets,\n    top_issue_category:   metrics.top_issue_category,\n    executive_summary:    analysis.executive_summary,\n    top_trends:           analysis.top_trends,\n    anomalies:            analysis.anomalies || [],\n    customer_sentiment:   analysis.customer_sentiment || {},\n    support_health:       analysis.support_health || {},\n    recommendation_1:     analysis.recommendation_1 || {},\n    recommendation_2:     analysis.recommendation_2 || {}\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1376,
+        0
+      ],
+      "id": "19ce11fc-25fd-41df-8561-629fe80d0c7e",
+      "name": "Parse Gemini Response"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const d = $input.item.json;\n\n// Format currency\nconst formatINR = (amount) => '₹' + Number(amount).toLocaleString('en-IN');\n\n// Format trends section\nconst trendsHtml = (d.top_trends || []).map(t => `\n  <tr>\n    <td style=\"padding:8px 12px; border-bottom:1px solid #f0f0f0;\">\n      <span style=\"color:${t.impact === 'positive' ? '#16a34a' : '#dc2626'}; font-weight:600;\">\n        ${t.impact === 'positive' ? '▲' : '▼'} ${t.trend}\n      </span><br>\n      <span style=\"color:#6b7280; font-size:13px;\">Data point: ${t.data_point}</span>\n    </td>\n  </tr>\n`).join('');\n\n// Format anomalies\nconst anomaliesHtml = (d.anomalies || []).map(a => `\n  <li style=\"margin-bottom:6px; color:#b45309;\">⚠ ${a}</li>\n`).join('');\n\n// Format recommendations\nconst rec1 = d.recommendation_1 || {};\nconst rec2 = d.recommendation_2 || {};\n\nconst htmlReport = `\n<!DOCTYPE html>\n<html>\n<head><meta charset=\"UTF-8\"></head>\n<body style=\"margin:0; padding:0; background:#f9fafb; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;\">\n\n<div style=\"max-width:680px; margin:32px auto; background:#ffffff; border-radius:12px; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,0.1);\">\n\n  <!-- Header -->\n  <div style=\"background:linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%); padding:32px;\">\n    <h1 style=\"margin:0; color:#ffffff; font-size:22px; font-weight:700;\">Weekly Business Intelligence Report</h1>\n    <p style=\"margin:6px 0 0; color:#bfdbfe; font-size:14px;\">Week of ${d.week_start} to ${d.week_end}</p>\n  </div>\n\n  <!-- Executive Summary -->\n  <div style=\"padding:24px 32px; background:#eff6ff; border-bottom:1px solid #dbeafe;\">\n    <h2 style=\"margin:0 0 8px; color:#1e40af; font-size:15px; text-transform:uppercase; letter-spacing:0.5px;\">Executive Summary</h2>\n    <p style=\"margin:0; color:#1e3a5f; font-size:15px; line-height:1.6;\">${d.executive_summary}</p>\n  </div>\n\n  <!-- KPI Cards -->\n  <div style=\"padding:24px 32px; border-bottom:1px solid #f0f0f0;\">\n    <h2 style=\"margin:0 0 16px; color:#111827; font-size:15px; text-transform:uppercase; letter-spacing:0.5px;\">Key Metrics This Week</h2>\n    <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\">\n      <tr>\n        <td style=\"width:25%; padding:16px; background:#f0fdf4; border-radius:8px; text-align:center;\">\n          <div style=\"font-size:22px; font-weight:700; color:#16a34a;\">${formatINR(d.total_revenue)}</div>\n          <div style=\"font-size:12px; color:#6b7280; margin-top:4px;\">Total Revenue</div>\n        </td>\n        <td style=\"width:4%;\"></td>\n        <td style=\"width:25%; padding:16px; background:#eff6ff; border-radius:8px; text-align:center;\">\n          <div style=\"font-size:22px; font-weight:700; color:#2563eb;\">${d.total_orders}</div>\n          <div style=\"font-size:12px; color:#6b7280; margin-top:4px;\">Total Orders</div>\n        </td>\n        <td style=\"width:4%;\"></td>\n        <td style=\"width:25%; padding:16px; background:#fefce8; border-radius:8px; text-align:center;\">\n          <div style=\"font-size:22px; font-weight:700; color:#ca8a04;\">${formatINR(d.avg_order_value)}</div>\n          <div style=\"font-size:12px; color:#6b7280; margin-top:4px;\">Avg Order Value</div>\n        </td>\n        <td style=\"width:4%;\"></td>\n        <td style=\"width:25%; padding:16px; background:#fdf4ff; border-radius:8px; text-align:center;\">\n          <div style=\"font-size:22px; font-weight:700; color:#9333ea;\">${d.avg_rating} ★</div>\n          <div style=\"font-size:12px; color:#6b7280; margin-top:4px;\">Avg Rating</div>\n        </td>\n      </tr>\n    </table>\n  </div>\n\n  <!-- Top Trends -->\n  <div style=\"padding:24px 32px; border-bottom:1px solid #f0f0f0;\">\n    <h2 style=\"margin:0 0 12px; color:#111827; font-size:15px; text-transform:uppercase; letter-spacing:0.5px;\">Top Trends This Week</h2>\n    <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\">\n      ${trendsHtml}\n    </table>\n  </div>\n\n  <!-- Anomalies -->\n  <div style=\"padding:24px 32px; background:#fffbeb; border-bottom:1px solid #fde68a;\">\n    <h2 style=\"margin:0 0 12px; color:#92400e; font-size:15px; text-transform:uppercase; letter-spacing:0.5px;\">⚠ Anomalies & Watch Points</h2>\n    <ul style=\"margin:0; padding-left:20px;\">\n      ${anomaliesHtml}\n    </ul>\n  </div>\n\n  <!-- Customer Sentiment + Support Health -->\n  <div style=\"padding:24px 32px; border-bottom:1px solid #f0f0f0;\">\n    <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\">\n      <tr>\n        <td style=\"width:48%; vertical-align:top;\">\n          <h2 style=\"margin:0 0 8px; color:#111827; font-size:15px; text-transform:uppercase; letter-spacing:0.5px;\">Customer Sentiment</h2>\n          <span style=\"display:inline-block; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600;\n            background:${d.customer_sentiment?.overall === 'Positive' ? '#dcfce7' : d.customer_sentiment?.overall === 'Negative' ? '#fee2e2' : '#fef9c3'};\n            color:${d.customer_sentiment?.overall === 'Positive' ? '#16a34a' : d.customer_sentiment?.overall === 'Negative' ? '#dc2626' : '#ca8a04'};\">\n            ${d.customer_sentiment?.overall || 'N/A'}\n          </span>\n          <p style=\"margin:8px 0 0; color:#374151; font-size:14px; line-height:1.5;\">${d.customer_sentiment?.summary || ''}</p>\n        </td>\n        <td style=\"width:4%;\"></td>\n        <td style=\"width:48%; vertical-align:top;\">\n          <h2 style=\"margin:0 0 8px; color:#111827; font-size:15px; text-transform:uppercase; letter-spacing:0.5px;\">Support Health</h2>\n          <span style=\"display:inline-block; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600;\n            background:${d.support_health?.status === 'Healthy' ? '#dcfce7' : d.support_health?.status === 'Critical' ? '#fee2e2' : '#fef9c3'};\n            color:${d.support_health?.status === 'Healthy' ? '#16a34a' : d.support_health?.status === 'Critical' ? '#dc2626' : '#ca8a04'};\">\n            ${d.support_health?.status || 'N/A'}\n          </span>\n          <p style=\"margin:8px 0 0; color:#374151; font-size:14px; line-height:1.5;\">${d.support_health?.summary || ''}</p>\n          <p style=\"margin:6px 0 0; color:#6b7280; font-size:13px;\">Open tickets: <strong>${d.open_tickets}</strong> | Top issue: <strong>${d.top_issue_category}</strong></p>\n        </td>\n      </tr>\n    </table>\n  </div>\n\n  <!-- Recommendations -->\n  <div style=\"padding:24px 32px; border-bottom:1px solid #f0f0f0;\">\n    <h2 style=\"margin:0 0 16px; color:#111827; font-size:15px; text-transform:uppercase; letter-spacing:0.5px;\">🎯 This Week's Action Items</h2>\n    \n    <div style=\"background:#f0fdf4; border-left:4px solid #16a34a; padding:16px; border-radius:0 8px 8px 0; margin-bottom:12px;\">\n      <div style=\"font-weight:700; color:#15803d; margin-bottom:4px;\">1. ${rec1.action || ''}</div>\n      <div style=\"color:#374151; font-size:14px; line-height:1.5;\">${rec1.detail || ''}</div>\n    </div>\n\n    <div style=\"background:#eff6ff; border-left:4px solid #2563eb; padding:16px; border-radius:0 8px 8px 0;\">\n      <div style=\"font-weight:700; color:#1d4ed8; margin-bottom:4px;\">2. ${rec2.action || ''}</div>\n      <div style=\"color:#374151; font-size:14px; line-height:1.5;\">${rec2.detail || ''}</div>\n    </div>\n  </div>\n\n  <!-- Footer -->\n  <div style=\"padding:20px 32px; background:#f9fafb;\">\n    <p style=\"margin:0; color:#9ca3af; font-size:12px; text-align:center;\">\n      This report was automatically generated by your AI Business Intelligence System.<br>\n      Top category this week: <strong>${d.top_category}</strong>\n    </p>\n  </div>\n\n</div>\n</body>\n</html>\n`;\n\nreturn {\n  json: {\n    ...d,\n    html_report: htmlReport,\n    report_title: `BI Report: Week of ${d.week_start}`,\n    run_timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1584,
+        0
+      ],
+      "id": "f6613531-04d2-43df-a5b8-c015c5881821",
+      "name": "Format HTML Report"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Orders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Orders": {
+      "main": [
+        [
+          {
+            "node": "Read Feedback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Feedback": {
+      "main": [
+        [
+          {
+            "node": "Read Support Tickets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Support Tickets": {
+      "main": [
+        [
+          {
+            "node": "Merge and Analyze All Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model": {
+      "main": [
+        [
+          {
+            "node": "Parse Gemini Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message": {
+      "main": [
+        [
+          {
+            "node": "Send a message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge and Analyze All Data": {
+      "main": [
+        [
+          {
+            "node": "Message a model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Gemini Response": {
+      "main": [
+        [
+          {
+            "node": "Format HTML Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format HTML Report": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "16885812-c6b1-49b0-a880-d24bed614de6",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "feeb2cda2ef78b5561e3d0628dcd9fa6b770bf0bcf8da1ed704e87330759e5c4"
+  },
+  "id": "9KBC4XlkndHG7baX",
+  "tags": []
+}
